@@ -1,3 +1,28 @@
+# Malaria dataset directory (large files)
+malaria_dataset/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
 .python-version
 .vscode
 
@@ -17,3 +42,9 @@ poetry.lock
 .DS_Store
 ._.DS_Store
 dist
+
+# Dataset - only track markdown files
+dataset/**/*
+!dataset/**/*.md
+
+examples/

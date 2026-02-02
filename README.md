@@ -1,56 +1,123 @@
-# you only glance once
-![License](https://img.shields.io/badge/license-BSD--3--Clause-green)
-![PyPI version](https://img.shields.io/pypi/v/yogo)
-[![Downloads](https://pepy.tech/badge/yogo)](https://pepy.tech/project/yogo)
+# Malaria Detection with YOGO
 
-A version of the [YOLO architecture (versions 1 through 3)](https://pjreddie.com/darknet/yolo/), optimized for inference speed on simple object detection problems. Designed for the [remoscope project](https://www.czbiohub.org/life-science/seeing-malaria-in-a-new-light/) by the bioengineering team at the [Chan-Zuckerberg Biohub SF](https://www.czbiohub.org/sf/).
+Automated malaria parasite (Plasmodium falciparum) detection from microscopy images using the YOGO (You Only Glance Once) object detection framework.
 
-Our yogo manuscript is currently in preparation - stay tuned!
+## Project Overview
 
-## Install
+This project uses YOGO, a simplified YOLO architecture optimized for real-time object detection on uniform-sized objects, to detect malaria parasites in microscopy images. The dataset includes annotated DPC (Differential Phase Contrast) and fluorescent microscopy images from samples collected across Africa.
 
-With Python versions >= 3.9 and < 3.11, you can install yogo with `pip`
+**Key Features:**
+- Real-time malaria parasite detection
+- Support for grayscale DPC and RGB fluorescent microscopy
+- Optimized for low-latency inference on limited hardware
+- Dataset includes 15 samples (9 positive, 6 negative) with 3,576 verified annotations
 
-```console
-python3 -m pip install -e yogo
-```
+## Dataset
 
-For developing YOGO, clone the repo and then run
+The dataset contains microscopy images from multiple sources:
+- **Uganda**: 4 samples (3,278 positives) - high parasitemia
+- **Rwanda**: 4 samples (111 positives) - low parasitemia
+- **Nigeria**: 3 samples (187 positives, 2 negatives)
+- **SBC (USA)**: 4 samples (quality control negatives)
 
-```console
+**Image specifications:**
+- Resolution: 3000×3000 pixels
+- DPC format: PNG, 8-bit grayscale
+- Fluorescent format: PNG, RGB or 8-bit grayscale
+- Bounding box size: 31×31 pixels (fixed)
+- Coordinate format: YOLO-style normalized centers
+
+For detailed dataset information, see [dataset/CLAUDE.md](dataset/CLAUDE.md) and [dataset/README.md](dataset/README.md).
+
+## Installation
+
+Requires Python >= 3.9 and < 3.11.
+
+```bash
+# Install in development mode
 python3 -m pip install -e ".[dev]"
 ```
 
-## Basic usage
+## Basic Usage
 
-```console
-$ yogo train path/to/dataset-definition-file.yml  # train your model!
-$ yogo infer path/to/model.pth  # use your model!
-$ yogo export path/to/model.pth  # use your model somewhere else!
-$ yogo test path/to/model.pth path/to/dataset-definition-file. # test your model!
-$ yogo --help  # all the other details are here :)
+```bash
+# Train a model
+yogo train path/to/dataset-definition.yml
+
+# Test a model
+yogo test path/to/model.pth path/to/dataset-definition.yml
+
+# Run inference
+yogo infer path/to/model.pth
+
+# Export model for deployment
+yogo export path/to/model.pth
+
+# Get help
+yogo --help
 ```
 
-We're using [Weights and Biases](http://wandb.ai) for run tracking. But, note that you do not need a W&B account to run anything! Runs that are started without an account are logged to an anonymous page. If you do decide to start with W&B, look [here](https://docs.wandb.ai/quickstart). Anonymous runs can be [claimed later](https://docs.wandb.ai/guides/app/features/anon).
+**Note:** GPU training is currently required (uses PyTorch Distributed Data Parallel).
 
-Further, we currently only support GPU training, since we use Torch's Distributed Data Parallel.
+## Project Structure
 
-> [!NOTE]
-> Installing Openvino on Apple Silicon is a little involved. [Here is Openvino's guide to installation](https://github.com/openvinotoolkit/openvino/blob/master/docs/dev/build_mac_arm.md). You can also use a Linux VM or Docker.
+```
+.
+├── yogo/                      # YOGO source code (model, training, inference)
+├── dataset/                   # Malaria microscopy dataset
+│   ├── CLAUDE.md             # Dataset metadata and statistics
+│   ├── README.md             # Annotation format specification
+│   └── [sample_dirs]/        # Individual samples with FOVs
+├── docs/                      # YOGO documentation
+│   ├── dataset-definition.md # How to format datasets
+│   ├── yogo-high-level.md    # Architecture overview
+│   ├── cli.md                # Command line guide
+│   └── recipes.md            # Code examples
+├── trained_models/           # Saved model checkpoints
+├── examples/                 # Test scripts and examples
+├── scripts/                  # Utility scripts
+├── tests/                    # Test suite
+├── yogo_paper.pdf           # YOGO research paper
+└── pyproject.toml           # Package configuration
+```
 
+## Documentation
 
-## Docs
+- **[docs/yogo-high-level.md](docs/yogo-high-level.md)** - YOGO architecture explanation
+- **[docs/dataset-definition.md](docs/dataset-definition.md)** - Dataset format specification
+- **[docs/cli.md](docs/cli.md)** - Command line interface guide
+- **[docs/recipes.md](docs/recipes.md)** - Code usage examples
+- **[yogo_paper.pdf](yogo_paper.pdf)** - Original YOGO research paper
 
-Documentation for YOGO. If you want documentation in a specific area, [let us know](https://github.com/czbiohub-sf/yogo/issues/new)!
+## Training Considerations
 
-- [recipes.md](docs/recipes.md) has the basics of using YOGO in your own code
-- [cli.md](docs/cli.md) is a short guide on how to use YOGO from the command line (via `yogo`)
-- [yogo-high-level.md](docs/yogo-high-level.md) is a high level guide of the YOGO architecture
-- [dataset-definition.md](docs/dataset-definition.md) defines the dataset description files, the files YOGO uses to define datasets for training
+Based on the dataset characteristics:
 
+**Image preprocessing:**
+- Original images are 3000×3000, may need resizing/tiling
+- Recommended: 1024×1024 tiles with overlap OR resize to 1536×1536
+- DPC (grayscale) matches YOGO default input format
 
-## Contributing Guidelines
+**Data split:**
+- Stratified split by geography recommended for diversity
+- Suggested: 70% train / 15% val / 15% test
 
-Please run `./prepush.sh` before pushing. It runs [`mypy`](https://mypy-lang.org/), [`ruff`](https://docs.astral.sh/ruff/), [`black`](https://github.com/psf/black) and [`pytest`](https://docs.pytest.org/en/8.2.x/).
+**Class imbalance:**
+- High parasitemia samples (Uganda) will dominate training
+- Consider weighted sampling or augmentation for low-positive samples
+- Ensure negative samples are well-represented
 
-When creating issues or pull requests, please be detailed. What exact commands were you running on what computer to get your issue? What exactly does your PR contribute and why is it necessary?
+**Data augmentation:**
+- Rotation and flips (parasites have no preferred orientation)
+- Brightness/contrast adjustments (simulate microscopy variations)
+- Minimal elastic deformations (RBC deformation may confuse model)
+
+## Weights & Biases Integration
+
+YOGO uses [Weights and Biases](http://wandb.ai) for run tracking. You don't need a W&B account - runs without an account are logged to an anonymous page that can be [claimed later](https://docs.wandb.ai/guides/app/features/anon).
+
+## Reference
+
+YOGO is based on the YOLO architecture (versions 1-3) and was developed by the bioengineering team at Chan-Zuckerberg Biohub SF for the [Remoscope project](https://www.czbiohub.org/life-science/seeing-malaria-in-a-new-light/).
+
+Original YOGO documentation: [examples/YOGO_original_README.md](examples/YOGO_original_README.md)
