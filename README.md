@@ -89,6 +89,12 @@ yogo --help
 - **[docs/recipes.md](docs/recipes.md)** - Code usage examples
 - **[yogo_paper.pdf](yogo_paper.pdf)** - Original YOGO research paper
 
+## Development Guidelines
+
+This project uses Claude Code with project-specific rules in `.claude/rules/`:
+- **Documentation Rule** - All code changes must include documentation updates in the same commit
+- See `.claude/rules/documentation.md` for the full documentation workflow
+
 ## Training Considerations
 
 Based on the dataset characteristics:
