@@ -3,7 +3,7 @@ from torch import nn
 from typing import Callable, Optional, Dict
 
 
-ModelDefn = Callable[[int, bool], nn.Module]
+ModelDefn = Callable[[int, bool, Optional[int]], nn.Module]
 
 MODELS: Dict[str, ModelDefn] = {}
 
@@ -28,8 +28,9 @@ def register_model(model_defn: ModelDefn) -> ModelDefn:
 
 
 @register_model
-def base_model(num_classes: int, rgb_input: bool = False) -> nn.Module:
-    input_channels = 3 if rgb_input else 1
+def base_model(num_classes: int, rgb_input: bool = False, input_channels: Optional[int] = None) -> nn.Module:
+    if input_channels is None:
+        input_channels = 3 if rgb_input else 1
     conv_block_1 = nn.Sequential(
         nn.Conv2d(input_channels, 16, 3, stride=2, padding=1, bias=False),
         nn.BatchNorm2d(16),
@@ -78,8 +79,9 @@ def base_model(num_classes: int, rgb_input: bool = False) -> nn.Module:
 
 
 @register_model
-def silu_model(num_classes: int, rgb_input: bool = False) -> nn.Module:
-    input_channels = 3 if rgb_input else 1
+def silu_model(num_classes: int, rgb_input: bool = False, input_channels: Optional[int] = None) -> nn.Module:
+    if input_channels is None:
+        input_channels = 3 if rgb_input else 1
     conv_block_1 = nn.Sequential(
         nn.Conv2d(input_channels, 16, 3, stride=2, padding=1, bias=False),
         nn.BatchNorm2d(16),
@@ -128,8 +130,9 @@ def silu_model(num_classes: int, rgb_input: bool = False) -> nn.Module:
 
 
 @register_model
-def double_filters(num_classes: int, rgb_input: bool = False) -> nn.Module:
-    input_channels = 3 if rgb_input else 1
+def double_filters(num_classes: int, rgb_input: bool = False, input_channels: Optional[int] = None) -> nn.Module:
+    if input_channels is None:
+        input_channels = 3 if rgb_input else 1
     conv_block_1 = nn.Sequential(
         nn.Conv2d(input_channels, 32, 3, stride=2, padding=1, bias=False),
         nn.BatchNorm2d(32),
@@ -178,8 +181,9 @@ def double_filters(num_classes: int, rgb_input: bool = False) -> nn.Module:
 
 
 @register_model
-def triple_filters(num_classes: int, rgb_input: bool = False) -> nn.Module:
-    input_channels = 3 if rgb_input else 1
+def triple_filters(num_classes: int, rgb_input: bool = False, input_channels: Optional[int] = None) -> nn.Module:
+    if input_channels is None:
+        input_channels = 3 if rgb_input else 1
     conv_block_1 = nn.Sequential(
         nn.Conv2d(input_channels, 48, 3, stride=2, padding=1, bias=False),
         nn.BatchNorm2d(48),
@@ -228,8 +232,9 @@ def triple_filters(num_classes: int, rgb_input: bool = False) -> nn.Module:
 
 
 @register_model
-def half_filters(num_classes: int, rgb_input: bool = False) -> nn.Module:
-    input_channels = 3 if rgb_input else 1
+def half_filters(num_classes: int, rgb_input: bool = False, input_channels: Optional[int] = None) -> nn.Module:
+    if input_channels is None:
+        input_channels = 3 if rgb_input else 1
     conv_block_1 = nn.Sequential(
         nn.Conv2d(input_channels, 8, 3, stride=2, padding=1, bias=False),
         nn.BatchNorm2d(8),
@@ -278,8 +283,9 @@ def half_filters(num_classes: int, rgb_input: bool = False) -> nn.Module:
 
 
 @register_model
-def quarter_filters(num_classes: int, rgb_input: bool = False) -> nn.Module:
-    input_channels = 3 if rgb_input else 1
+def quarter_filters(num_classes: int, rgb_input: bool = False, input_channels: Optional[int] = None) -> nn.Module:
+    if input_channels is None:
+        input_channels = 3 if rgb_input else 1
     conv_block_1 = nn.Sequential(
         nn.Conv2d(input_channels, 4, 3, stride=2, padding=1, bias=False),
         nn.BatchNorm2d(4),
@@ -328,8 +334,9 @@ def quarter_filters(num_classes: int, rgb_input: bool = False) -> nn.Module:
 
 
 @register_model
-def depth_ver_0(num_classes: int, rgb_input: bool = False) -> nn.Module:
-    input_channels = 3 if rgb_input else 1
+def depth_ver_0(num_classes: int, rgb_input: bool = False, input_channels: Optional[int] = None) -> nn.Module:
+    if input_channels is None:
+        input_channels = 3 if rgb_input else 1
     conv_block_1 = nn.Sequential(
         nn.Conv2d(input_channels, 32, 3, stride=2, padding=1, bias=False),
         nn.BatchNorm2d(32),
@@ -355,8 +362,9 @@ def depth_ver_0(num_classes: int, rgb_input: bool = False) -> nn.Module:
 
 
 @register_model
-def depth_ver_1(num_classes: int, rgb_input: bool = False) -> nn.Module:
-    input_channels = 3 if rgb_input else 1
+def depth_ver_1(num_classes: int, rgb_input: bool = False, input_channels: Optional[int] = None) -> nn.Module:
+    if input_channels is None:
+        input_channels = 3 if rgb_input else 1
     conv_block_1 = nn.Sequential(
         nn.Conv2d(input_channels, 16, 3, stride=2, padding=1, bias=False),
         nn.BatchNorm2d(16),
@@ -393,13 +401,14 @@ def depth_ver_1(num_classes: int, rgb_input: bool = False) -> nn.Module:
 
 
 @register_model
-def depth_ver_2(num_classes: int, rgb_input: bool = False) -> nn.Module:
-    return base_model(num_classes, rgb_input)
+def depth_ver_2(num_classes: int, rgb_input: bool = False, input_channels: Optional[int] = None) -> nn.Module:
+    return base_model(num_classes, rgb_input, input_channels)
 
 
 @register_model
-def depth_ver_3(num_classes: int, rgb_input: bool = False) -> nn.Module:
-    input_channels = 3 if rgb_input else 1
+def depth_ver_3(num_classes: int, rgb_input: bool = False, input_channels: Optional[int] = None) -> nn.Module:
+    if input_channels is None:
+        input_channels = 3 if rgb_input else 1
     conv_block_1 = nn.Sequential(
         nn.Conv2d(input_channels, 16, 3, stride=2, padding=1, bias=False),
         nn.BatchNorm2d(16),
@@ -459,8 +468,9 @@ def depth_ver_3(num_classes: int, rgb_input: bool = False) -> nn.Module:
 
 
 @register_model
-def depth_ver_4(num_classes: int, rgb_input: bool = False) -> nn.Module:
-    input_channels = 3 if rgb_input else 1
+def depth_ver_4(num_classes: int, rgb_input: bool = False, input_channels: Optional[int] = None) -> nn.Module:
+    if input_channels is None:
+        input_channels = 3 if rgb_input else 1
     conv_block_1 = nn.Sequential(
         nn.Conv2d(input_channels, 16, 3, stride=2, padding=1, bias=False),
         nn.BatchNorm2d(16),
@@ -530,13 +540,14 @@ def depth_ver_4(num_classes: int, rgb_input: bool = False) -> nn.Module:
 
 
 @register_model
-def convnext_small(num_classes: int, rgb_input: bool = False) -> nn.Module:
+def convnext_small(num_classes: int, rgb_input: bool = False, input_channels: Optional[int] = None) -> nn.Module:
     try:
         import timm
     except ImportError:
         raise ImportError("Please install timm to use convnext_small.")
 
-    input_channels = 3 if rgb_input else 1
+    if input_channels is None:
+        input_channels = 3 if rgb_input else 1
     # timm is amazing
     # TODO is it better starting from pretrained? almost certianly yes
     model = timm.create_model(

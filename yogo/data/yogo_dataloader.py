@@ -12,10 +12,13 @@ from torch.utils.data import Dataset, ConcatDataset, DataLoader, Subset, random_
 
 from typing import Any, List, Dict, Optional, Tuple, MutableMapping, Iterable, Union
 
+from pathlib import Path as PathlibPath
+
 from yogo.data.blobgen import BlobDataset
 from yogo.data.utils import collate_batch_robust
 from yogo.data.split_fractions import SplitFractions
 from yogo.data.yogo_dataset import ObjectDetectionDataset
+from yogo.data.malaria_dataset import MalariaDetectionDataset
 from yogo.data.dataset_definition_file import DatasetDefinition
 from yogo.data.data_transforms import (
     DualInputModule,
@@ -69,6 +72,100 @@ def choose_dataloader_num_workers(
         return min(guess_suggested_num_workers() or 32, 64)
 
 
+def is_malaria_dataset(path: PathlibPath) -> bool:
+    """
+    Detect if a path contains malaria dataset structure.
+
+    Malaria datasets have FOVs with:
+    - dpc.png (grayscale DPC image)
+    - fluorescent.png (RGB fluorescent image)
+    - spots.csv (annotations)
+    """
+    path = PathlibPath(path)
+
+    # Check if path itself is a FOV directory
+    if (path / "dpc.png").exists() and (path / "fluorescent.png").exists():
+        return True
+
+    # Check if any subdirectory is a FOV directory
+    if path.is_dir():
+        for subdir in path.iterdir():
+            if not subdir.is_dir():
+                continue
+            if (subdir / "dpc.png").exists() and (subdir / "fluorescent.png").exists():
+                return True
+            # Check nested structure (sample/FOV)
+            for nested in subdir.iterdir():
+                if not nested.is_dir():
+                    continue
+                if (nested / "dpc.png").exists() and (nested / "fluorescent.png").exists():
+                    return True
+
+    return False
+
+
+def _load_explicit_splits(
+    dataset_definition: DatasetDefinition,
+    Sx: int,
+    Sy: int,
+    rgb: bool,
+    image_hw: Tuple[int, int],
+    normalize_images: bool,
+    tile_size: int,
+    tile_overlap: int,
+    use_malaria_dataset: bool,
+) -> MutableMapping[str, Dataset[Any]]:
+    """Load datasets with explicit train/val/test paths"""
+    split_datasets = {}
+
+    def _load_split(paths, desc):
+        if not paths:
+            return None
+        if use_malaria_dataset:
+            return ConcatDataset([
+                MalariaDetectionDataset(
+                    dsp.image_path,
+                    dsp.label_path,
+                    Sx,
+                    Sy,
+                    classes=dataset_definition.classes,
+                    tile_size=tile_size,
+                    overlap=tile_overlap,
+                    normalize_images=normalize_images,
+                )
+                for dsp in tqdm(paths, desc=desc)
+            ])
+        else:
+            return ConcatDataset([
+                ObjectDetectionDataset(
+                    dsp.image_path,
+                    dsp.label_path,
+                    Sx,
+                    Sy,
+                    image_hw=image_hw,
+                    rgb=rgb,
+                    classes=dataset_definition.classes,
+                    normalize_images=normalize_images,
+                )
+                for dsp in tqdm(paths, desc=desc)
+            ])
+
+    # Load each split
+    train_ds = _load_split(dataset_definition.train_dataset_paths, "loading train dataset")
+    val_ds = _load_split(dataset_definition.val_dataset_paths, "loading val dataset")
+    test_ds = _load_split(dataset_definition.test_dataset_paths, "loading test dataset")
+
+    if train_ds is not None:
+        split_datasets["train"] = train_ds
+    if val_ds is not None:
+        split_datasets["val"] = val_ds
+        split_datasets["validate"] = val_ds  # Support both 'val' and 'validate'
+    if test_ds is not None:
+        split_datasets["test"] = test_ds
+
+    return split_datasets
+
+
 def get_datasets(
     dataset_definition: DatasetDefinition,
     Sx: int,
@@ -77,31 +174,56 @@ def get_datasets(
     image_hw: Tuple[int, int] = (772, 1032),
     normalize_images: bool = False,
     split_fraction_override: Optional[SplitFractions] = None,
+    tile_size: int = 1024,
+    tile_overlap: int = 256,
+    input_channels: Optional[int] = None,
 ) -> MutableMapping[str, Dataset[Any]]:
     """
     The job of this function is to convert the dataset_definition_file to actual pytorch datasets.
 
+    Supports both explicit train/val/test paths and fraction-based splitting.
     See the spec in `dataset_definition_file.py`
     """
-    full_dataset: ConcatDataset[ObjectDetectionDataset] = ConcatDataset(
-        ObjectDetectionDataset(
-            dsp.image_path,
-            dsp.label_path,
-            Sx,
-            Sy,
-            image_hw=image_hw,
-            rgb=rgb,
-            classes=dataset_definition.classes,
-            normalize_images=normalize_images,
-        )
-        for dsp in tqdm(dataset_definition.dataset_paths, desc="loading dataset")
-    )
+    # Detect if this is a malaria dataset (4-channel with tiling)
+    use_malaria_dataset = False
+    all_paths = ((dataset_definition.dataset_paths or []) +
+                 (dataset_definition.train_dataset_paths or []) +
+                 (dataset_definition.val_dataset_paths or []) +
+                 (dataset_definition.test_dataset_paths or []))
+    if all_paths:
+        first_path = all_paths[0].image_path
+        use_malaria_dataset = is_malaria_dataset(first_path)
 
-    if (
-        dataset_definition.test_dataset_paths is not None
-        and len(dataset_definition.test_dataset_paths) > 0
-    ):
-        test_dataset: ConcatDataset[ObjectDetectionDataset] = ConcatDataset(
+    # Check if using explicit train/val/test paths
+    if dataset_definition.has_explicit_splits:
+        return _load_explicit_splits(
+            dataset_definition, Sx, Sy, rgb, image_hw, normalize_images,
+            tile_size, tile_overlap, use_malaria_dataset
+        )
+
+    # Legacy path: use dataset_paths with split_fractions
+    if dataset_definition.dataset_paths:
+        first_path = dataset_definition.dataset_paths[0].image_path
+        use_malaria_dataset = is_malaria_dataset(first_path)
+
+    if use_malaria_dataset:
+        print(f"Detected malaria dataset structure - using MalariaDetectionDataset with tiling")
+        print(f"  Tile size: {tile_size}x{tile_size}, Overlap: {tile_overlap}px")
+        full_dataset: ConcatDataset = ConcatDataset(
+            MalariaDetectionDataset(
+                dsp.image_path,
+                dsp.label_path,
+                Sx,
+                Sy,
+                classes=dataset_definition.classes,
+                tile_size=tile_size,
+                overlap=tile_overlap,
+                normalize_images=normalize_images,
+            )
+            for dsp in tqdm(dataset_definition.dataset_paths, desc="loading dataset")
+        )
+    else:
+        full_dataset: ConcatDataset[ObjectDetectionDataset] = ConcatDataset(
             ObjectDetectionDataset(
                 dsp.image_path,
                 dsp.label_path,
@@ -112,10 +234,45 @@ def get_datasets(
                 classes=dataset_definition.classes,
                 normalize_images=normalize_images,
             )
-            for dsp in tqdm(
-                dataset_definition.test_dataset_paths, desc="loading test dataset"
-            )
+            for dsp in tqdm(dataset_definition.dataset_paths, desc="loading dataset")
         )
+
+    if (
+        dataset_definition.test_dataset_paths is not None
+        and len(dataset_definition.test_dataset_paths) > 0
+    ):
+        if use_malaria_dataset:
+            test_dataset: ConcatDataset = ConcatDataset(
+                MalariaDetectionDataset(
+                    dsp.image_path,
+                    dsp.label_path,
+                    Sx,
+                    Sy,
+                    classes=dataset_definition.classes,
+                    tile_size=tile_size,
+                    overlap=tile_overlap,
+                    normalize_images=normalize_images,
+                )
+                for dsp in tqdm(
+                    dataset_definition.test_dataset_paths, desc="loading test dataset"
+                )
+            )
+        else:
+            test_dataset: ConcatDataset[ObjectDetectionDataset] = ConcatDataset(
+                ObjectDetectionDataset(
+                    dsp.image_path,
+                    dsp.label_path,
+                    Sx,
+                    Sy,
+                    image_hw=image_hw,
+                    rgb=rgb,
+                    classes=dataset_definition.classes,
+                    normalize_images=normalize_images,
+                )
+                for dsp in tqdm(
+                    dataset_definition.test_dataset_paths, desc="loading test dataset"
+                )
+            )
         if split_fraction_override is not None:
             split_datasets = split_dataset(
                 ConcatDataset([full_dataset, test_dataset]), split_fraction_override
@@ -189,6 +346,9 @@ def get_dataloader(
     rgb: bool = False,
     normalize_images: bool = False,
     split_fraction_override: Optional[SplitFractions] = None,
+    tile_size: int = 1024,
+    tile_overlap: int = 256,
+    input_channels: Optional[int] = None,
 ) -> Dict[str, DataLoader]:
     split_datasets = get_datasets(
         dataset_definition,
@@ -198,6 +358,9 @@ def get_dataloader(
         image_hw=image_hw,
         normalize_images=normalize_images,
         split_fraction_override=split_fraction_override,
+        tile_size=tile_size,
+        tile_overlap=tile_overlap,
+        input_channels=input_channels,
     )
 
     augmentations: List[DualInputModule] = (
@@ -255,7 +418,14 @@ def _get_dataloader(
     # TODO this division by world_size is hacky. Starting up the dataloaders
     # are in*sane*ly slow. This helps reduce the problem, but tbh not by much
     dataset_len = len(dataset)  # type: ignore
-    num_workers = max(1, choose_dataloader_num_workers(dataset_len) // world_size)
+    num_workers = choose_dataloader_num_workers(dataset_len) // world_size
+
+    # For malaria dataset with tiling, use 0 workers to avoid initialization overhead
+    # Each worker needs to initialize the full dataset which is expensive
+    if hasattr(dataset.dataset if hasattr(dataset, 'dataset') else dataset, '__class__'):
+        dataset_obj = dataset.dataset if hasattr(dataset, 'dataset') else dataset
+        if 'MalariaDetectionDataset' in str(type(dataset_obj)):
+            num_workers = 0
 
     return DataLoader(
         dataset,

@@ -24,12 +24,13 @@ class YOGO(nn.Module):
         model_func: ModelDefn = base_model,
         clip_value: float = 1.0,
         device: Union[torch.device, str] = "cpu",
+        input_channels: Optional[int] = None,
     ):
         super().__init__()
 
         self.device = device
 
-        self.model = model_func(num_classes, is_rgb).to(device)
+        self.model = model_func(num_classes, is_rgb, input_channels).to(device)
         self.model_version = model_func.__name__
 
         self.register_buffer("img_size", torch.tensor(img_size))
@@ -39,6 +40,9 @@ class YOGO(nn.Module):
         self.register_buffer("clip_value", torch.tensor(clip_value))
         self.register_buffer("is_rgb", torch.tensor(is_rgb))
         self.register_buffer("normalize_images", torch.tensor(normalize_images))
+        if input_channels is None:
+            input_channels = 3 if is_rgb else 1
+        self.register_buffer("input_channels", torch.tensor(input_channels))
 
         self.inference = inference
 
@@ -125,6 +129,11 @@ class YOGO(nn.Module):
             normalize_images = loaded_pth.get("normalize_images", False)
             params["normalize_images"] = torch.tensor(normalize_images)
 
+        if "input_channels" not in params:
+            # Default to RGB (3) or grayscale (1) based on is_rgb flag
+            input_channels = 3 if params["is_rgb"].item() else 1
+            params["input_channels"] = torch.tensor(input_channels)
+
         model = cls(
             (img_size[0], img_size[1]),
             anchor_w.item(),
@@ -133,6 +142,7 @@ class YOGO(nn.Module):
             inference=inference,
             tuning=True,
             model_func=get_model_func(model_version),
+            input_channels=params["input_channels"].item(),
         )
 
         model.load_state_dict(params)

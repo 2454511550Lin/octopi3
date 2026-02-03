@@ -156,6 +156,8 @@ class LiteralSpecification:
 
 class SpecificationsKey(Enum):
     DATASET_PATHS = "dataset_paths"
+    TRAIN_PATHS = "train_paths"
+    VAL_PATHS = "val_paths"
     TEST_DATASET_PATHS = "test_paths"
     ALL_DATASET_PATHS = "all_paths"
 
@@ -170,12 +172,16 @@ class DatasetDefinition:
 
     The main results are mostly the same as before:
         - dataset_paths: a list of dicts, {image_path: str, label_path: str}
+        - train_dataset_paths: explicit train paths (optional)
+        - val_dataset_paths: explicit val paths (optional)
         - test_dataset_paths: a list of dicts, {image_path: str, label_path: str}
         - classes: a list of class names
         - thumbnail_augmentation: a dict of {class_name: Path}
     """
 
     _dataset_paths: Set[LiteralSpecification]
+    _train_dataset_paths: Set[LiteralSpecification]
+    _val_dataset_paths: Set[LiteralSpecification]
     _test_dataset_paths: Set[LiteralSpecification]
 
     classes: List[str]
@@ -187,25 +193,38 @@ class DatasetDefinition:
         return list(self._dataset_paths)
 
     @property
+    def train_dataset_paths(self) -> List[LiteralSpecification]:
+        return list(self._train_dataset_paths)
+
+    @property
+    def val_dataset_paths(self) -> List[LiteralSpecification]:
+        return list(self._val_dataset_paths)
+
+    @property
     def test_dataset_paths(self) -> List[LiteralSpecification]:
         return list(self._test_dataset_paths)
 
     @property
     def all_dataset_paths(self) -> List[LiteralSpecification]:
-        return list(self._dataset_paths | self._test_dataset_paths)
+        return list(self._dataset_paths | self._train_dataset_paths | self._val_dataset_paths | self._test_dataset_paths)
+
+    @property
+    def has_explicit_splits(self) -> bool:
+        """Check if train/val/test are explicitly defined"""
+        return len(self._train_dataset_paths) > 0 or len(self._val_dataset_paths) > 0
 
     @classmethod
     def from_yaml(cls, path: Path) -> "DatasetDefinition":
         """
         Load ddf file from the yaml file definition.
+        Supports both legacy format (dataset_paths + split_fractions) and
+        new explicit format (train_paths, val_paths, test_paths).
         """
         path = Path(path)  # defensive, in-case we're handed a string
 
         with open(path, "r") as f:
             yaml = YAML(typ="safe")
             data = yaml.load(f)
-
-        test_paths_present = "test_paths" in data
 
         try:
             classes = data["class_names"]
@@ -214,34 +233,72 @@ class DatasetDefinition:
                 "`classes` is a required key in the dataset definition file"
             ) from e
 
-        if test_paths_present:
-            dataset_specs = cls._load_dataset_specifications(
-                path, classes, dataset_paths_key=SpecificationsKey.DATASET_PATHS
-            )
+        # Check if using explicit train/val/test paths (new format)
+        train_paths_present = "train_paths" in data
+        val_paths_present = "val_paths" in data
+        test_paths_present = "test_paths" in data
+        explicit_splits = train_paths_present or val_paths_present
+
+        if explicit_splits:
+            # New format: explicit train/val/test paths
+            train_specs = cls._load_dataset_specifications(
+                path, classes, dataset_paths_key=SpecificationsKey.TRAIN_PATHS
+            ) if train_paths_present else set()
+
+            val_specs = cls._load_dataset_specifications(
+                path,
+                classes,
+                exclude_specs=train_specs,
+                dataset_paths_key=SpecificationsKey.VAL_PATHS
+            ) if val_paths_present else set()
+
             test_specs = cls._load_dataset_specifications(
                 path,
                 classes,
-                exclude_ymls=[path],
-                exclude_specs=dataset_specs,
-                dataset_paths_key=SpecificationsKey.TEST_DATASET_PATHS,
-            )
+                exclude_specs=train_specs | val_specs,
+                dataset_paths_key=SpecificationsKey.TEST_DATASET_PATHS
+            ) if test_paths_present else set()
+
+            dataset_specs = set()  # Empty for explicit splits
+            split_fractions = SplitFractions.train_only()  # Not used with explicit splits
         else:
-            dataset_specs = cls._load_dataset_specifications(
-                path, classes, dataset_paths_key=SpecificationsKey.ALL_DATASET_PATHS
-            )
-            test_specs = set()
+            # Legacy format: dataset_paths + split_fractions
+            if test_paths_present:
+                dataset_specs = cls._load_dataset_specifications(
+                    path, classes, dataset_paths_key=SpecificationsKey.DATASET_PATHS
+                )
+                test_specs = cls._load_dataset_specifications(
+                    path,
+                    classes,
+                    exclude_ymls=[path],
+                    exclude_specs=dataset_specs,
+                    dataset_paths_key=SpecificationsKey.TEST_DATASET_PATHS,
+                )
+            else:
+                dataset_specs = cls._load_dataset_specifications(
+                    path, classes, dataset_paths_key=SpecificationsKey.ALL_DATASET_PATHS
+                )
+                test_specs = set()
+
+            train_specs = set()
+            val_specs = set()
+
+            if "dataset_split_fractions" in data:
+                split_fractions = SplitFractions.from_dict(
+                    data["dataset_split_fractions"], test_paths_present=test_paths_present
+                )
+            else:
+                split_fractions = SplitFractions.train_only()
 
         dataset_specs = DatasetDefinition._check_dataset_paths(dataset_specs)
+        train_specs = DatasetDefinition._check_dataset_paths(train_specs)
+        val_specs = DatasetDefinition._check_dataset_paths(val_specs)
         test_specs = DatasetDefinition._check_dataset_paths(test_specs)
-        if "dataset_split_fractions" in data:
-            split_fractions = SplitFractions.from_dict(
-                data["dataset_split_fractions"], test_paths_present=test_paths_present
-            )
-        else:
-            split_fractions = SplitFractions.train_only()
 
         return cls(
             _dataset_paths=dataset_specs,
+            _train_dataset_paths=train_specs,
+            _val_dataset_paths=val_specs,
             _test_dataset_paths=test_specs,
             classes=classes,
             thumbnail_augmentation=DatasetDefinition._load_thumbnails(classes, data),
@@ -268,10 +325,14 @@ class DatasetDefinition:
             )
 
         _dataset_paths = self._dataset_paths | other._dataset_paths
+        _train_dataset_paths = self._train_dataset_paths | other._train_dataset_paths
+        _val_dataset_paths = self._val_dataset_paths | other._val_dataset_paths
         _test_dataset_paths = self._test_dataset_paths | other._test_dataset_paths
 
         return DatasetDefinition(
             _dataset_paths=_dataset_paths,
+            _train_dataset_paths=_train_dataset_paths,
+            _val_dataset_paths=_val_dataset_paths,
             _test_dataset_paths=_test_dataset_paths,
             classes=self.classes,
             thumbnail_augmentation=self.thumbnail_augmentation,
@@ -283,6 +344,8 @@ class DatasetDefinition:
             return False
         return (
             self._dataset_paths == other._dataset_paths
+            and self._train_dataset_paths == other._train_dataset_paths
+            and self._val_dataset_paths == other._val_dataset_paths
             and self._test_dataset_paths == other._test_dataset_paths
             and self.classes == other.classes
             and self.thumbnail_augmentation == other.thumbnail_augmentation

@@ -105,6 +105,42 @@ test_paths:
 
 Note that when `test_paths` is present, the `test` key in `dataset_split_fractions` is invalid.
 
+### Explicit Train/Val/Test Splits
+
+For scenarios where you need complete control over which data goes into each split (e.g., patient-level splitting to avoid data leakage), you can use explicit `train_paths`, `val_paths`, and `test_paths`:
+
+```yaml
+class_names:
+  - positive
+  - unsure
+
+# Explicitly define which data goes to each split
+train_paths:
+  patient1:
+    image_path: dataset/patient1/
+    label_path: dataset/patient1/
+  patient2:
+    image_path: dataset/patient2/
+    label_path: dataset/patient2/
+
+val_paths:
+  patient3:
+    image_path: dataset/patient3/
+    label_path: dataset/patient3/
+
+test_paths:
+  patient4:
+    image_path: dataset/patient4/
+    label_path: dataset/patient4/
+```
+
+When using explicit splits:
+- All data in `train_paths` goes to training
+- All data in `val_paths` goes to validation
+- All data in `test_paths` goes to testing
+- `dataset_split_fractions` is ignored
+- This ensures complete control over data splitting (critical for preventing data leakage in medical datasets)
+
 
 ## Nice features
 
@@ -149,6 +185,70 @@ thumbnail_augmentation:
   dogs: /folder/of/thumbnails/dogs
 ```
 Thumbnails from these folders will be randomly pasted onto a white background and those images will be used for training.
+
+## Malaria Detection Dataset Format
+
+The malaria detection dataset uses a specialized format with paired images and CSV annotations, automatically handled by the `MalariaDetectionDataset` class.
+
+### Directory Structure
+```
+dataset/
+├── Patient1_timestamp/
+│   ├── FOV1/
+│   │   ├── dpc.png          # Grayscale DPC image (1 channel)
+│   │   ├── fluorescent.png  # RGB fluorescent image (3 channels)
+│   │   └── spots.csv        # Annotations
+│   ├── FOV2/
+│   │   ├── dpc.png
+│   │   ├── fluorescent.png
+│   │   └── spots.csv
+│   └── ...
+└── Patient2_timestamp/
+    └── ...
+```
+
+### Annotation Format (spots.csv)
+```csv
+label,x_norm,y_norm,w_norm,h_norm
+positive,0.523,0.671,0.0104,0.0104
+unsure,0.234,0.891,0.0104,0.0104
+negative,0.456,0.123,0.0104,0.0104
+```
+
+- **label**: Class name (positive, unsure, or negative)
+- **x_norm, y_norm**: Normalized center coordinates (0-1)
+- **w_norm, h_norm**: Normalized width and height (0-1)
+
+### Tiling for Large Images
+
+Malaria images are large (2800×2800 or 3000×3000 pixels) with small targets (~31px). The dataset automatically tiles images into 1024×1024 patches with 256px overlap:
+
+```yaml
+# Dataset definition for malaria with tiling
+class_names:
+  - positive
+  - unsure
+
+train_paths:
+  patient1:
+    image_path: dataset/Patient1_timestamp/
+    label_path: dataset/Patient1_timestamp/
+```
+
+When using the malaria dataset, specify tiling parameters in the training command:
+```bash
+python -m yogo.train dataset/malaria_dataset.yaml \
+    --input-channels 4 \
+    --tile-size 1024 \
+    --tile-overlap 256
+```
+
+**Key features:**
+- Automatic detection of malaria directory structure (dpc.png + fluorescent.png)
+- 4-channel input: DPC (1 channel) + RGB fluorescent (3 channels)
+- Tiles are created on-the-fly during data loading
+- Labels are automatically filtered (e.g., exclude "negative" labels during training)
+- Each FOV generates multiple tiles as separate training samples
 
 ## Loading and using the dataset definition file
 

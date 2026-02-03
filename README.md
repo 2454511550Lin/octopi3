@@ -8,9 +8,10 @@ This project uses YOGO, a simplified YOLO architecture optimized for real-time o
 
 **Key Features:**
 - Real-time malaria parasite detection
-- Support for grayscale DPC and RGB fluorescent microscopy
+- Support for 4-channel input (DPC + RGB fluorescent) or grayscale/RGB
+- Tiling support for large microscopy images with overlap
 - Optimized for low-latency inference on limited hardware
-- Dataset includes 15 samples (9 positive, 6 negative) with 3,576 verified annotations
+- Dataset includes 15 patients (60 FOVs) with 3,576 verified annotations
 
 ## Dataset
 
@@ -21,11 +22,13 @@ The dataset contains microscopy images from multiple sources:
 - **SBC (USA)**: 4 samples (quality control negatives)
 
 **Image specifications:**
-- Resolution: 3000×3000 pixels
-- DPC format: PNG, 8-bit grayscale
-- Fluorescent format: PNG, RGB or 8-bit grayscale
+- Resolution: 2800×2800 (73%) or 3000×3000 (27%) pixels
+- DPC format: PNG, 8-bit grayscale (1 channel)
+- Fluorescent format: PNG, RGB (3 channels)
+- Combined: 4-channel input (DPC + RGB fluorescent)
 - Bounding box size: 31×31 pixels (fixed)
 - Coordinate format: YOLO-style normalized centers
+- Tiling: 1024×1024 with 256px overlap (9 tiles per FOV)
 
 For detailed dataset information, see [dataset/CLAUDE.md](dataset/CLAUDE.md) and [dataset/README.md](dataset/README.md).
 
@@ -41,8 +44,18 @@ python3 -m pip install -e ".[dev]"
 ## Basic Usage
 
 ```bash
-# Train a model
-yogo train path/to/dataset-definition.yml
+# Train a model with 4-channel input (DPC + RGB fluorescent)
+python -m yogo.train dataset/malaria_stratified_cv_fold1.yaml \
+    --image-hw 1024 1024 \
+    --input-channels 4 \
+    --tile-size 1024 \
+    --tile-overlap 256 \
+    --batch-size 8 \
+    --epochs 50 \
+    --model base_model \
+    --normalize-images \
+    --half \
+    --no-obj-weight 0.05
 
 # Test a model
 yogo test path/to/model.pth path/to/dataset-definition.yml
@@ -58,6 +71,12 @@ yogo --help
 ```
 
 **Note:** GPU training is currently required (uses PyTorch Distributed Data Parallel).
+
+**Key Parameters:**
+- `--input-channels 4`: Use 4-channel input (DPC + RGB fluorescent)
+- `--tile-size 1024`: Tile size for large images
+- `--tile-overlap 256`: Overlap between tiles (reduces edge artifacts)
+- `--no-obj-weight 0.05`: Background loss weight (critical for malaria detection)
 
 ## Project Structure
 
@@ -100,18 +119,27 @@ This project uses Claude Code with project-specific rules in `.claude/rules/`:
 Based on the dataset characteristics:
 
 **Image preprocessing:**
-- Original images are 3000×3000, may need resizing/tiling
-- Recommended: 1024×1024 tiles with overlap OR resize to 1536×1536
-- DPC (grayscale) matches YOGO default input format
+- Original images are 2800×2800 or 3000×3000 pixels
+- **Tiling approach (implemented):** 1024×1024 tiles with 256px overlap
+  - Preserves full resolution for ~31px parasites
+  - 9 tiles per FOV, 540 total training samples from 60 FOVs
+  - NMS during inference removes duplicate detections from overlaps
+- 4-channel input: DPC (1 channel) + RGB fluorescent (3 channels)
 
 **Data split:**
-- Stratified split by geography recommended for diversity
-- Suggested: 70% train / 15% val / 15% test
+- **Patient-level splitting (critical):** All FOVs from same patient stay together
+- Site-stratified split recommended for diversity
+- Current: 67% train / 20% val / 13% test (10 / 3 / 2 patients)
+
+**Loss weighting:**
+- **Critical:** Use `--no-obj-weight 0.05` to balance background vs object loss
+- Default 0.5 causes objectness learning failure due to 1743:1 background ratio
+- Lower weight (0.05) enables model to learn confident predictions
 
 **Class imbalance:**
-- High parasitemia samples (Uganda) will dominate training
-- Consider weighted sampling or augmentation for low-positive samples
-- Ensure negative samples are well-represented
+- High parasitemia samples (Uganda) dominate positive detections
+- Empty tiles from negative samples help reduce false positives
+- Both positive and negative tiles included naturally via tiling
 
 **Data augmentation:**
 - Rotation and flips (parasites have no preferred orientation)

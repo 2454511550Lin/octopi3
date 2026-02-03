@@ -205,6 +205,24 @@ def train_parser(parser=None):
         help="use RGB images instead of grayscale - overridden if loading from pth (defaults to grayscale)",
     )
     parser.add_argument(
+        "--input-channels",
+        type=uint,
+        default=None,
+        help="number of input channels (overrides --rgb-images; use 4 for malaria detection with DPC+fluorescent)",
+    )
+    parser.add_argument(
+        "--tile-size",
+        type=uint,
+        default=1024,
+        help="tile size for splitting large images (default: 1024)",
+    )
+    parser.add_argument(
+        "--tile-overlap",
+        type=uint,
+        default=256,
+        help="overlap between tiles in pixels (default: 256)",
+    )
+    parser.add_argument(
         "--model",
         default=None,
         const=None,

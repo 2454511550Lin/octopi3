@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import sys
-import wandb
 import torch
 import warnings
 
@@ -28,7 +27,6 @@ from yogo.utils.argparsers import train_parser
 from yogo.utils.default_hyperparams import DefaultHyperparams as df
 from yogo.utils import (
     draw_yogo_prediction,
-    get_wandb_roc,
     get_free_port,
     choose_device,
 )
@@ -90,7 +88,7 @@ class Trainer:
         self._init_model()
         self._init_dataset()
         self._init_training_tools()
-        self._init_wandb()
+        self._init_experiment_tracker()
         self._initialized = True
 
     def _init_tcp_store(self) -> None:
@@ -131,6 +129,7 @@ class Trainer:
                 is_rgb=self.config["rgb"],
                 num_classes=len(self.config["class_names"]),
                 model_func=get_model_func(self.config["model"]),
+                input_channels=self.config.get("input_channels"),
             ).to(self.device)
             self.global_step = 0
         else:
@@ -173,6 +172,9 @@ class Trainer:
             rgb=self.config["rgb"],
             normalize_images=self.config["normalize_images"],
             split_fraction_override=self.config["dataset_split_override"],
+            tile_size=self.config.get("tile_size", 1024),
+            tile_overlap=self.config.get("tile_overlap", 256),
+            input_channels=self.config.get("input_channels"),
         )
 
         train_dataloader = dataloaders["train"]
@@ -222,47 +224,44 @@ class Trainer:
             eta_min=self.config["learning_rate"] / self.config["decay_factor"],
         )
 
-    def _init_wandb(self) -> None:
+    def _init_experiment_tracker(self) -> None:
+        """Initialize experiment tracking with ExperimentTracker."""
         if self._rank != 0:
             return
 
-        run_id = wandb.util.generate_id()
-        wandb.init(
-            id=run_id,
-            config=self.config,
-            entity=self.config["wandb_entity"],
-            project=self.config["wandb_project"],
-            name=self.config["name"],
-            notes=self.config["note"],
-            tags=self.config["tags"],
+        from yogo.utils.experiment_tracker import ExperimentTracker
+
+        # Create experiment tracker
+        experiment_name = self.config.get("name") or "training"
+        self.experiment_tracker = ExperimentTracker(
+            results_dir=Path("results"),
+            experiment_name=experiment_name
         )
 
-        wandb.config.update(
-            {
-                "Sx": self.Sx,
-                "Sy": self.Sy,
-                "training set size": f"{self._dataset_size(self.train_dataloader)} images",  # type:ignore
-                "validation set size": f"{self._dataset_size(self.validate_dataloader)} images",  # type:ignore
-                "testing set size": f"{self._dataset_size(self.test_dataloader)} images",  # type:ignore
-                "normalize_images": self.config["normalize_images"],
-                "wandb_run_id": run_id,
-            },
-            allow_val_change=True,
-        )
+        # Save configuration
+        self.experiment_tracker.save_config(self.config)
 
-        trained_model_dir = Path(f"{__file__}").parent.parent / "trained_models"
-        if wandb.run is not None:
-            model_save_dir = trained_model_dir / wandb.run.name
-        else:
-            model_save_dir = (
-                trained_model_dir
-                / f"run_{torch.randint(100000000, size=(1,)).item():08}"
+        # Copy dataset definition
+        if Path(self.config["dataset_descriptor_file"]).exists():
+            self.experiment_tracker.copy_dataset_definition(
+                Path(self.config["dataset_descriptor_file"])
             )
 
-        model_save_dir.mkdir(exist_ok=True, parents=True)
+        # TODO: Save dataset splits (requires access to actual sample names)
+        # This would need to be extracted from the dataset
+
+        # Set model save directory to experiment checkpoints folder
+        model_save_dir = self.experiment_tracker.checkpoints_dir
         self.model_save_dir = model_save_dir
 
         self._store.set("model_save_dir", str(model_save_dir.resolve()))
+
+        # Log experiment info
+        self.experiment_tracker.log(f"Experiment started: {experiment_name}")
+        self.experiment_tracker.log(f"Grid size: {self.Sx} x {self.Sy}")
+        self.experiment_tracker.log(f"Train size: {self._dataset_size(self.train_dataloader)} images")
+        self.experiment_tracker.log(f"Val size: {self._dataset_size(self.validate_dataloader)} images")
+        self.experiment_tracker.log(f"Test size: {self._dataset_size(self.test_dataloader)} images")
 
     def checkpoint(
         self,
@@ -326,17 +325,11 @@ class Trainer:
 
                 self.global_step += 1
 
-                if self._rank == 0:
-                    wandb.log(
-                        {
-                            "train loss": loss.item(),
-                            "epoch": epoch,
-                            "LR": self.scheduler.get_last_lr()[0],
-                            **loss_components,
-                        },
-                        commit=self.global_step % 100 == 0,
-                        step=self.global_step,
-                    )
+                # Log training metrics to experiment tracker
+                if self._rank == 0 and self.global_step % 100 == 0:
+                    log_msg = f"Step {self.global_step}: loss={loss.item():.4f}, LR={self.scheduler.get_last_lr()[0]:.6f}"
+                    if hasattr(self, 'experiment_tracker'):
+                        self.experiment_tracker.log(log_msg)
 
             if epoch % 4 == 0:
                 self._validate()
@@ -366,8 +359,6 @@ class Trainer:
             warnings.warn(
                 "no test metrics found - most likely test_dataloader is empty"
             )
-
-        wandb.finish()
 
         torch.distributed.destroy_process_group()
 
@@ -406,41 +397,25 @@ class Trainer:
             return
 
         # just use the final imgs and labels for val!
-        annotated_img = wandb.Image(
-            draw_yogo_prediction(
-                imgs[0, ...],
-                outputs[0, ...].detach(),
-                labels=self.config["class_names"],
-                images_are_normalized=self.config["normalize_images"],
-            )
-        )
-
         mean_val_loss = val_loss.item() / len(self.validate_dataloader)
 
-        wandb.log(
-            {
-                "validation bbs": annotated_img,
-                "val loss": mean_val_loss,
-            },
-            step=self.global_step,
-        )
+        # Log validation metrics to experiment tracker
+        if self._rank == 0 and hasattr(self, 'experiment_tracker'):
+            self.experiment_tracker.log(f"Validation - Step {self.global_step}: loss={mean_val_loss:.4f}")
 
         self.model_save_dir = Path(self._store.get("model_save_dir").decode("utf-8"))
         if mean_val_loss < self.min_val_loss:
             self.min_val_loss = mean_val_loss
-            wandb.log({"best_val_loss": mean_val_loss}, step=self.global_step)
+            if hasattr(self, 'experiment_tracker'):
+                self.experiment_tracker.log(f"New best validation loss: {mean_val_loss:.4f}")
             self.checkpoint(
                 self.model_save_dir / "best.pth",
-                model_name=(
-                    wandb.run.name if wandb.run is not None else "recent_run_best"
-                ),
+                model_name="best",
             )
         else:
             self.checkpoint(
                 self.model_save_dir / "latest.pth",
-                model_name=(
-                    wandb.run.name if wandb.run is not None else "recent_run_latest"
-                ),
+                model_name="latest",
             )
 
     @staticmethod
@@ -515,7 +490,7 @@ class Trainer:
         return (
             mean_loss.item(),  # type: ignore
             mAP,
-            test_metrics.get_wandb_confusion_matrix(confusion_data),
+            confusion_data,
             accuracy,
             roc_curves,
             precision,
@@ -543,8 +518,8 @@ class Trainer:
                     f"{key} is required in config (full list of keys: {required_test_keys})"
                 )
 
-    @staticmethod
     def _log_test_metrics(
+        self,
         mean_test_loss,
         mAP,
         confusion_data,
@@ -562,45 +537,24 @@ class Trainer:
         kind-of a crummy, hacky method to log everything to W&B. Not pretty, but functional.
         Functional as in "it works", not as in "pure function"
         """
-        accuracy_table = wandb.Table(
-            data=[[labl, acc] for labl, acc in zip(class_names, accuracy)],
-            columns=["label", "accuracy"],
-        )
+        # Save test metrics to experiment tracker
+        test_metrics_dict = {
+            "test_loss": mean_test_loss,
+            "test_mAP": mAP["map"],
+            "test_precision": precision.mean().item(),
+            "test_recall": recall.mean().item(),
+            "calibration_error": calibration_error,
+        }
 
-        fpr, tpr, thresholds = roc_curves
-
-        wandb.summary["test loss"] = mean_test_loss
-        wandb.summary["test mAP"] = mAP["map"]
-        wandb.summary["test mAP (full)"] = mAP
-        wandb.summary["test precision"] = precision.mean()
-        wandb.summary["test recall"] = recall.mean()
-        wandb.summary["calibration error"] = calibration_error
-        wandb.summary["num obj missed by class"] = num_obj_missed_by_class
-        wandb.summary["num obj extra by class"] = num_obj_extra_by_class
-        wandb.summary["total num true objects"] = total_num_true_objects
-
-        per_class_precision, per_class_recall = dict(), dict()
+        # Add per-class metrics
         for i, cn in enumerate(class_names):
-            per_class_precision[f"test precision {cn}"] = precision[i].item()
-            per_class_recall[f"test recall {cn}"] = recall[i].item()
+            test_metrics_dict[f"test_precision_{cn}"] = precision[i].item()
+            test_metrics_dict[f"test_recall_{cn}"] = recall[i].item()
 
-        wandb.summary["per-class precision"] = per_class_precision
-        wandb.summary["per-class recall"] = per_class_recall
-
-        wandb.log(
-            {
-                "test confusion": confusion_data,
-                "test accuracy": wandb.plot.bar(
-                    accuracy_table, "label", "accuracy", title="test accuracy"
-                ),
-                "test ROC": get_wandb_roc(
-                    fpr=[t.tolist() for t in fpr],
-                    tpr=[t.tolist() for t in tpr],
-                    thresholds=[t.tolist() for t in thresholds],
-                    classes=class_names,
-                ),
-            }
-        )
+        # Log to experiment tracker if available
+        if hasattr(self, 'experiment_tracker'):
+            self.experiment_tracker.save_metrics(test_metrics_dict, filename="test_metrics.json")
+            self.experiment_tracker.log(f"Test metrics: mAP={mAP['map']:.4f}, precision={precision.mean():.4f}, recall={recall.mean():.4f}")
 
 
 def do_training(args) -> None:
@@ -632,14 +586,15 @@ def do_training(args) -> None:
         "normalize_images": args.normalize_images,
         "dataset_split_override": args.dataset_split_override,
         "dataset_descriptor_file": args.dataset_descriptor_file,
+        "input_channels": args.input_channels,
+        "tile_size": args.tile_size,
+        "tile_overlap": args.tile_overlap,
         "slurm-job-id": os.getenv("SLURM_JOB_ID", default=None),
         "torch-version": torch.__version__,
         "python-version": sys.version,
         "name": args.name,
         "note": args.note,
         "tags": args.tags,
-        "wandb_entity": args.wandb_entity,
-        "wandb_project": args.wandb_project,
     }
 
     world_size = torch.cuda.device_count()
@@ -649,11 +604,17 @@ def do_training(args) -> None:
             "is required, we can add it back"
         )
 
-    wandb.login(anonymous="allow")
-
-    mp.spawn(
-        Trainer.train_from_ddp, args=(world_size, config), nprocs=world_size, join=True
-    )
+    # For single GPU, train directly without DDP to avoid multiprocessing overhead
+    if world_size == 1:
+        print("Single GPU detected - training without DDP")
+        trainer = Trainer(config, _rank=0, _world_size=1)
+        trainer.init()
+        trainer.train()
+    else:
+        print(f"Multi-GPU detected ({world_size} GPUs) - using DDP")
+        mp.spawn(
+            Trainer.train_from_ddp, args=(world_size, config), nprocs=world_size, join=True
+        )
 
 
 if __name__ == "__main__":

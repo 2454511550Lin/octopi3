@@ -91,15 +91,81 @@ This dataset contains annotated microscopy images for malaria parasite (Plasmodi
 
 ---
 
-## Image Specifications
+## Image Specifications (Verified February 2026)
 
-| Property | Value |
-|----------|-------|
-| **Image dimensions** | 3000 × 3000 pixels |
-| **DPC format** | PNG, 8-bit grayscale |
-| **Fluorescent format** | PNG, RGB or 8-bit grayscale |
-| **Bounding box size** | 31 × 31 pixels (fixed) |
-| **Coordinate format** | YOLO-style (normalized centers) |
+### Dimension Statistics
+- **DPC images:** 60 total
+  - 2800×2800: 44 images (73%)
+  - 3000×3000: 16 images (27%)
+  - Format: 8-bit grayscale PNG
+  - Mean size: ~4.4 MB
+
+- **Fluorescent images:** 60 total
+  - 2800×2800: 44 images (73%)
+  - 3000×3000: 16 images (27%)
+  - Format: RGB PNG (8-bit per channel)
+  - Mean size: ~7.7 MB
+
+### Dimension Distribution by Sample
+- **2800×2800 samples (11):** Rwanda, Nigeria, SBC samples
+- **3000×3000 samples (4):** Uganda high-parasitemia samples
+
+**Note:** All image pairs within FOVs have matching dimensions.
+
+### Detection Target
+- **Bounding box size:** 31 × 31 pixels (fixed)
+- **Parasite size:** ~31px diameter (requires full resolution)
+- **Coordinate format:** YOLO-style (normalized centers)
+
+### Tiling Strategy for Training
+To preserve full resolution for small (~31px) parasites while fitting memory constraints:
+
+- **Tile size:** 1024×1024 pixels
+- **Overlap:** 256 pixels (stride=768)
+- **Tiles per FOV:** 9 (3×3 grid) for both 2800×2800 and 3000×3000 images
+- **Total training samples:** 540 tiles (60 FOVs × 9 tiles)
+- **Grid capacity per tile:** 128×128 cells = 16,384 cells (36× margin for max ~450 detections/tile)
+- **Memory per tile:** 4.2MB (1024×1024×4 channels)
+
+**Rationale:**
+- Preserves parasites at full ~31px resolution (no downsampling)
+- Overlap ensures parasites near tile edges appear in multiple tiles
+- NMS during inference removes duplicate detections from overlaps
+- 540 samples provide good training data from 60 FOVs
+
+---
+
+## Training Configuration (February 2026)
+
+### YOGO Training Command
+```bash
+python -m yogo.train dataset/malaria_dataset_defn.yaml \
+    --image-hw 1024 1024 \
+    --input-channels 4 \
+    --tile-size 1024 \
+    --tile-overlap 256 \
+    --batch-size 16 \
+    --epochs 100 \
+    --learning-rate 1e-4 \
+    --model base_model \
+    --normalize-images \
+    --half
+```
+
+### Key Training Parameters
+- **Input:** 4 channels (DPC + RGB fluorescent)
+- **Image size:** 1024×1024 pixels (tile size)
+- **Classes:** 2 (positive, unsure)
+- **Batch size:** 16 (adjust based on GPU memory)
+- **Training samples:** 540 tiles (360 train / 108 val / 72 test)
+- **Patient-level splits:** Critical to avoid data leakage
+
+### Dataset Split Strategy
+- **Train:** 10 patients (40 FOVs, 360 tiles, 67%)
+- **Validation:** 3 patients (12 FOVs, 108 tiles, 20%)
+- **Test:** 2 patients (8 FOVs, 72 tiles, 13%)
+
+**Important:** All FOVs from the same patient must stay in the same split to prevent data leakage.
 
 ---
 
@@ -154,13 +220,21 @@ This sample can be used for:
    - Ensure negative samples are well-represented
 
 ### Preprocessing Considerations
-1. **Image size:** 3000×3000 may need resizing or tiling for YOGO
-   - Recommended: 1024×1024 tiles with overlap
-   - Alternative: Resize to 1536×1536 (retains more detail)
-2. **DPC vs Fluorescent:**
-   - DPC (grayscale) matches YOGO default input
-   - Fluorescent provides complementary information
-   - Consider 2-channel or 4-channel input
+1. **Image size:** Mixed 2800×2800 and 3000×3000 requires tiling strategy
+   - **Implemented:** 1024×1024 tiles with 256px overlap (stride=768)
+   - Generates 9 tiles per FOV regardless of original size
+   - No downsampling - preserves full parasite resolution
+
+2. **Multi-channel input:**
+   - **Implemented:** 4-channel input [DPC, R, G, B]
+   - DPC (1 channel): Grayscale differential phase contrast
+   - Fluorescent (3 channels): RGB fluorescent image
+   - Concatenated to form 4-channel input for YOGO
+
+3. **Label filtering:**
+   - Only "positive" and "unsure" labels used for training
+   - "negative" annotations ignored (too many, imbalanced)
+   - "ignored" annotations excluded
 
 ### Data Augmentation
 - **Rotation:** Parasites have no preferred orientation

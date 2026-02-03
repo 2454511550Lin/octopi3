@@ -208,16 +208,19 @@ def draw_yogo_prediction(
     if img.ndim not in (2, 3):
         raise ValueError(
             "img must be 2-dimensional (i.e. grayscale), "
-            "or 3-dimensional (1 or three input channels) "
+            "or 3-dimensional (1, 3, or 4 input channels) "
             f"but has {img.ndim} dimensions"
         )
     elif img.ndim == 2:
         img = img[None, ...]
     elif img.ndim == 3:
-        if img.shape[0] not in (1, 3):
+        if img.shape[0] == 4:
+            # Handle 4-channel input (DPC + RGB) - use RGB channels for visualization
+            img = img[1:4, :, :]  # Take channels 1, 2, 3 (RGB), skip channel 0 (DPC)
+        elif img.shape[0] not in (1, 3):
             raise ValueError(
                 "img must be 2-dimensional (i.e. grayscale), "
-                "or 3-dimensional (1 or three input channels) "
+                "or 3-dimensional (1, 3, or 4 input channels) "
                 f"but has {img.ndim} dimensions"
             )
     elif prediction.ndim != 3:

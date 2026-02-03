@@ -1,0 +1,110 @@
+# Malaria Detection Dataset Definition
+# 4-channel microscopy images (DPC + fluorescent) with tiling
+# Patient-level splits to avoid data leakage
+
+class_names:
+  - positive
+  - unsure
+
+# Dataset split fractions (train/val/test)
+# Patient-level splits: 10 train / 3 val / 2 test patients
+# Results in: 360 train tiles / 108 val tiles / 72 test tiles (540 total)
+dataset_split_fractions:
+  train: 0.667  # 10 patients, 40 FOVs, 360 tiles
+  val: 0.200    # 3 patients, 12 FOVs, 108 tiles
+  test: 0.133   # 2 patients, 8 FOVs, 72 tiles
+
+# Note: Patient-level splitting is critical to avoid data leakage
+# All FOVs from the same patient must stay in the same split
+# The dataset will be shuffled before splitting, so the actual
+# patient assignments may vary between runs unless a fixed seed is used
+
+dataset_paths:
+  # Training samples (10 patients from plan)
+  train_pat_097:
+    image_path: dataset/PAT-097-2_2023-03-31_23-36-59.835903
+    label_path: dataset/PAT-097-2_2023-03-31_23-36-59.835903
+
+  train_pat_101:
+    image_path: dataset/PAT-101-2_2023-09-02_17-04-12.388423
+    label_path: dataset/PAT-101-2_2023-09-02_17-04-12.388423
+
+  train_pat_104:
+    image_path: dataset/PAT-104-AR-1_2023-04-02_19-50-32.175255
+    label_path: dataset/PAT-104-AR-1_2023-04-02_19-50-32.175255
+
+  train_3456:
+    image_path: dataset/3456_20X_20240827_080751
+    label_path: dataset/3456_20X_20240827_080751
+
+  train_3457:
+    image_path: dataset/3457_20X_20240827_081250
+    label_path: dataset/3457_20X_20240827_081250
+
+  train_3459:
+    image_path: dataset/3459_20X_20240827_082100
+    label_path: dataset/3459_20X_20240827_082100
+
+  train_3461:
+    image_path: dataset/3461_20X_20240827_083141
+    label_path: dataset/3461_20X_20240827_083141
+
+  train_hp242868:
+    image_path: dataset/HP242868 R_20251210_042253
+    label_path: dataset/HP242868 R_20251210_042253
+
+  train_octopi254:
+    image_path: dataset/Octopi 254 HP243945_20250912_230224
+    label_path: dataset/Octopi 254 HP243945_20250912_230224
+
+  train_sbc_06a:
+    image_path: dataset/SBC_20240725_06A
+    label_path: dataset/SBC_20240725_06A
+
+  # Validation samples (3 patients from plan)
+  val_bus_114:
+    image_path: dataset/BUS-114-1_2023-01-21_19-25-3.663354
+    label_path: dataset/BUS-114-1_2023-01-21_19-25-3.663354
+
+  val_octopi258:
+    image_path: dataset/Octopi 258 HP230692_20250912_231709
+    label_path: dataset/Octopi 258 HP230692_20250912_231709
+
+  val_sbc_09a:
+    image_path: dataset/SBC_20240725_09A
+    label_path: dataset/SBC_20240725_09A
+
+  # Test samples (2 patients from plan - negative controls)
+  test_sbc_12a:
+    image_path: dataset/SBC_20240725_12A
+    label_path: dataset/SBC_20240725_12A
+
+  test_sbc_15a:
+    image_path: dataset/SBC_20240725_15A
+    label_path: dataset/SBC_20240725_15A
+
+# Tiling configuration
+# - tile_size: 1024x1024 pixels (preserves full resolution ~31px parasites)
+# - overlap: 256 pixels (stride=768) to handle boundary parasites
+# - Each FOV generates 9 tiles (3x3 grid) regardless of size (2800x2800 or 3000x3000)
+# - Total: 60 FOVs × 9 tiles = 540 training samples
+# Use command-line args: --tile-size 1024 --tile-overlap 256
+
+# Input configuration
+# Use command-line args:
+# --input-channels 4 (DPC + RGB fluorescent)
+# --image-hw 1024 1024 (matches tile size)
+# --normalize-images (recommended for 4-channel input)
+
+# Example training command:
+# python -m yogo.train dataset/malaria_dataset_defn.yaml \
+#     --image-hw 1024 1024 \
+#     --input-channels 4 \
+#     --tile-size 1024 \
+#     --tile-overlap 256 \
+#     --batch-size 16 \
+#     --epochs 100 \
+#     --learning-rate 1e-4 \
+#     --model base_model \
+#     --normalize-images \
+#     --half

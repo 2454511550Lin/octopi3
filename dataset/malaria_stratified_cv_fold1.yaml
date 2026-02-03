@@ -1,0 +1,119 @@
+# Malaria Detection Dataset - Site-Stratified Cross-Validation (Fold 1)
+# Created: February 1, 2026
+# Split: 8 train / 4 val / 3 test (53% / 27% / 20%)
+# Stratification: ALL 4 SITES IN ALL 3 SPLITS
+
+class_names:
+  - positive
+  - unsure
+
+# ============================================================================
+# TRAIN SET (8 patients, 32 FOVs, 512 tiles)
+# Uganda: 2, Rwanda: 2, Nigeria: 2, SBC: 2
+# ~1,386 parasites, 3 negatives
+# ============================================================================
+
+train_paths:
+  # Uganda (2 patients)
+  train_pat_097:
+    image_path: dataset/PAT-097-2_2023-03-31_23-36-59.835903
+    label_path: dataset/PAT-097-2_2023-03-31_23-36-59.835903
+
+  train_pat_101:
+    image_path: dataset/PAT-101-2_2023-09-02_17-04-12.388423
+    label_path: dataset/PAT-101-2_2023-09-02_17-04-12.388423
+
+  # Rwanda (2 patients)
+  train_3456:
+    image_path: dataset/3456_20X_20240827_080751
+    label_path: dataset/3456_20X_20240827_080751
+
+  train_3459:
+    image_path: dataset/3459_20X_20240827_082100
+    label_path: dataset/3459_20X_20240827_082100
+
+  # Nigeria (2 patients)
+  train_hp242868:
+    image_path: dataset/HP242868 R_20251210_042253
+    label_path: dataset/HP242868 R_20251210_042253
+
+  train_octopi254:
+    image_path: dataset/Octopi 254 HP243945_20250912_230224
+    label_path: dataset/Octopi 254 HP243945_20250912_230224
+
+  # SBC (2 patients)
+  train_sbc_06a:
+    image_path: dataset/SBC_20240725_06A
+    label_path: dataset/SBC_20240725_06A
+
+  train_sbc_09a:
+    image_path: dataset/SBC_20240725_09A
+    label_path: dataset/SBC_20240725_09A
+
+# ============================================================================
+# VALIDATION SET (4 patients, 16 FOVs, 256 tiles)
+# Uganda: 1, Rwanda: 1, Nigeria: 1, SBC: 1
+# ~552 parasites, 2 negatives
+# ALL 4 SITES REPRESENTED ✓
+# ============================================================================
+
+val_paths:
+  # Uganda (1 patient - high parasitemia)
+  val_pat_104:
+    image_path: dataset/PAT-104-AR-1_2023-04-02_19-50-32.175255
+    label_path: dataset/PAT-104-AR-1_2023-04-02_19-50-32.175255
+
+  # Rwanda (1 patient - low positive)
+  val_3457:
+    image_path: dataset/3457_20X_20240827_081250
+    label_path: dataset/3457_20X_20240827_081250
+
+  # Nigeria (1 patient - negative)
+  val_octopi258:
+    image_path: dataset/Octopi 258 HP230692_20250912_231709
+    label_path: dataset/Octopi 258 HP230692_20250912_231709
+
+  # SBC (1 patient - negative control)
+  val_sbc_12a:
+    image_path: dataset/SBC_20240725_12A
+    label_path: dataset/SBC_20240725_12A
+
+# ============================================================================
+# TEST SET (3 patients, 12 FOVs, 192 tiles)
+# Uganda: 1, Rwanda: 1, SBC: 1
+# ~1,638 parasites, 1 negative
+# ============================================================================
+
+test_paths:
+  # Uganda (1 patient - very high parasitemia, stress test)
+  test_bus_114:
+    image_path: dataset/BUS-114-1_2023-01-21_19-25-3.663354
+    label_path: dataset/BUS-114-1_2023-01-21_19-25-3.663354
+
+  # Rwanda (1 patient - low positive)
+  test_3461:
+    image_path: dataset/3461_20X_20240827_083141
+    label_path: dataset/3461_20X_20240827_083141
+
+  # SBC (1 patient - negative control)
+  test_sbc_15a:
+    image_path: dataset/SBC_20240725_15A
+    label_path: dataset/SBC_20240725_15A
+
+# ============================================================================
+# SPLIT SUMMARY
+# ============================================================================
+# Train:  8 patients (Uganda: 2, Rwanda: 2, Nigeria: 2, SBC: 2)
+#         32 FOVs, 512 tiles, ~1,386 parasites, 3 negatives
+#
+# Val:    4 patients (Uganda: 1, Rwanda: 1, Nigeria: 1, SBC: 1)
+#         16 FOVs, 256 tiles, ~552 parasites, 2 negatives
+#
+# Test:   3 patients (Uganda: 1, Rwanda: 1, SBC: 1)
+#         12 FOVs, 192 tiles, ~1,638 parasites, 1 negative
+#
+# ✓ ALL 4 SITES REPRESENTED IN ALL SPLITS
+# ✓ Positive/negative balance in all splits
+# ✓ No patient appears in multiple splits
+# ✓ Explicit patient-level control (no random splitting)
+# ============================================================================

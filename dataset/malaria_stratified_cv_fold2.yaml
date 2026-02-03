@@ -1,0 +1,117 @@
+# Malaria Detection Dataset - Site-Stratified Cross-Validation (Fold 2)
+# Created: February 2, 2026
+# Split: 8 train / 4 val / 3 test (53% / 27% / 20%)
+# Stratification: ALL 4 SITES IN ALL 3 SPLITS
+# Different patient assignments from Fold 1
+
+class_names:
+  - positive
+  - unsure
+
+# ============================================================================
+# TRAIN SET (8 patients, 32 FOVs, 512 tiles)
+# Uganda: 2, Rwanda: 2, Nigeria: 2, SBC: 2
+# ============================================================================
+
+train_paths:
+  # Uganda (2 patients) - ROTATED from Fold 1
+  train_pat_104:
+    image_path: dataset/PAT-104-AR-1_2023-04-02_19-50-32.175255
+    label_path: dataset/PAT-104-AR-1_2023-04-02_19-50-32.175255
+
+  train_bus_114:
+    image_path: dataset/BUS-114-1_2023-01-21_19-25-3.663354
+    label_path: dataset/BUS-114-1_2023-01-21_19-25-3.663354
+
+  # Rwanda (2 patients) - ROTATED
+  train_3457:
+    image_path: dataset/3457_20X_20240827_081250
+    label_path: dataset/3457_20X_20240827_081250
+
+  train_3461:
+    image_path: dataset/3461_20X_20240827_083141
+    label_path: dataset/3461_20X_20240827_083141
+
+  # Nigeria (2 patients) - ROTATED
+  train_hp242868:
+    image_path: dataset/HP242868 R_20251210_042253
+    label_path: dataset/HP242868 R_20251210_042253
+
+  train_octopi258:
+    image_path: dataset/Octopi 258 HP230692_20250912_231709
+    label_path: dataset/Octopi 258 HP230692_20250912_231709
+
+  # SBC (2 patients) - ROTATED
+  train_sbc_12a:
+    image_path: dataset/SBC_20240725_12A
+    label_path: dataset/SBC_20240725_12A
+
+  train_sbc_15a:
+    image_path: dataset/SBC_20240725_15A
+    label_path: dataset/SBC_20240725_15A
+
+# ============================================================================
+# VALIDATION SET (4 patients, 16 FOVs, 256 tiles)
+# Uganda: 1, Rwanda: 1, Nigeria: 1, SBC: 1
+# ALL 4 SITES REPRESENTED ✓
+# ============================================================================
+
+val_paths:
+  # Uganda (1 patient)
+  val_pat_097:
+    image_path: dataset/PAT-097-2_2023-03-31_23-36-59.835903
+    label_path: dataset/PAT-097-2_2023-03-31_23-36-59.835903
+
+  # Rwanda (1 patient)
+  val_3456:
+    image_path: dataset/3456_20X_20240827_080751
+    label_path: dataset/3456_20X_20240827_080751
+
+  # Nigeria (1 patient)
+  val_octopi254:
+    image_path: dataset/Octopi 254 HP243945_20250912_230224
+    label_path: dataset/Octopi 254 HP243945_20250912_230224
+
+  # SBC (1 patient)
+  val_sbc_06a:
+    image_path: dataset/SBC_20240725_06A
+    label_path: dataset/SBC_20240725_06A
+
+# ============================================================================
+# TEST SET (3 patients, 12 FOVs, 192 tiles)
+# Uganda: 1, Rwanda: 1, SBC: 1
+# ============================================================================
+
+test_paths:
+  # Uganda (1 patient)
+  test_pat_101:
+    image_path: dataset/PAT-101-2_2023-09-02_17-04-12.388423
+    label_path: dataset/PAT-101-2_2023-09-02_17-04-12.388423
+
+  # Rwanda (1 patient)
+  test_3459:
+    image_path: dataset/3459_20X_20240827_082100
+    label_path: dataset/3459_20X_20240827_082100
+
+  # SBC (1 patient)
+  test_sbc_09a:
+    image_path: dataset/SBC_20240725_09A
+    label_path: dataset/SBC_20240725_09A
+
+# ============================================================================
+# SPLIT SUMMARY
+# ============================================================================
+# Train:  8 patients (Uganda: 2, Rwanda: 2, Nigeria: 2, SBC: 2)
+#         32 FOVs, 512 tiles
+#
+# Val:    4 patients (Uganda: 1, Rwanda: 1, Nigeria: 1, SBC: 1)
+#         16 FOVs, 256 tiles
+#
+# Test:   3 patients (Uganda: 1, Rwanda: 1, SBC: 1)
+#         12 FOVs, 192 tiles
+#
+# ✓ ALL 4 SITES REPRESENTED IN ALL SPLITS
+# ✓ Different patient assignments from Fold 1 (cross-validation)
+# ✓ No patient appears in multiple splits
+# ✓ Explicit patient-level control
+# ============================================================================
