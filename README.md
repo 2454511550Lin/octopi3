@@ -57,8 +57,15 @@ python -m yogo.train dataset/malaria_stratified_cv_fold1.yaml \
     --half \
     --no-obj-weight 0.05
 
-# Test a model
-yogo test path/to/model.pth path/to/dataset-definition.yml
+# Compute metrics on test data
+python -m yogo.compute_metrics \
+    results/fold1/checkpoints/best.pth \
+    dataset/malaria_stratified_cv_fold1.yaml
+
+# Compute metrics at specific confidence thresholds
+python -m yogo.compute_metrics model.pth dataset.yaml \
+    --conf-thresholds 0.3 0.5 0.7 \
+    --output metrics.json
 
 # Run inference
 yogo infer path/to/model.pth
