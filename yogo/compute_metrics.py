@@ -124,9 +124,12 @@ def compute_metrics_at_threshold(
     all_predictions: List[List[List[float]]],
     all_ground_truths: List[List[List[float]]],
     iou_threshold: float = 0.5,
-) -> Tuple[int, int, int]:
+    num_classes: int = 2,
+) -> Dict:
     """
     Compute TP, FP, FN for a set of predictions and ground truths.
+
+    Now includes per-class metrics and confusion matrix!
 
     Args:
         all_predictions: List of predictions per image, each prediction is
@@ -134,13 +137,31 @@ def compute_metrics_at_threshold(
         all_ground_truths: List of ground truths per image, each is
                           [x1, y1, x2, y2, class_id]
         iou_threshold: IoU threshold for matching predictions to ground truth
+        num_classes: Number of object classes
 
     Returns:
-        (true_positives, false_positives, false_negatives)
+        Dictionary with overall and per-class metrics
     """
+    # Overall metrics
     tp, fp, fn = 0, 0, 0
 
+    # Per-class metrics
+    per_class_tp = [0] * num_classes
+    per_class_fp = [0] * num_classes
+    per_class_fn = [0] * num_classes
+    per_class_gt_count = [0] * num_classes
+
+    # Confusion matrix: confusion[pred_class][gt_class]
+    # Also track FP per predicted class
+    confusion = [[0 for _ in range(num_classes)] for _ in range(num_classes)]
+    fp_per_pred_class = [0] * num_classes
+
     for pred_boxes, gt_boxes in zip(all_predictions, all_ground_truths):
+        # Count ground truth per class
+        for gt in gt_boxes:
+            gt_class = int(gt[4])
+            per_class_gt_count[gt_class] += 1
+
         # Handle empty cases
         if len(gt_boxes) == 0 and len(pred_boxes) == 0:
             continue
@@ -159,22 +180,86 @@ def compute_metrics_at_threshold(
                 best_iou, best_gt_idx = ious[p_idx].max(0)
                 best_gt_idx = best_gt_idx.item()
 
+                pred_class = int(pred_boxes[p_idx][5])
+
                 if best_iou >= iou_threshold and best_gt_idx not in matched_gt:
+                    # Matched! Check if class matches
+                    gt_class = int(gt_boxes[best_gt_idx][4])
+
+                    # Update confusion matrix
+                    confusion[pred_class][gt_class] += 1
+
+                    # Count as overall TP regardless of class match
                     tp += 1
+
+                    # For per-class metrics, require class match
+                    if pred_class == gt_class:
+                        per_class_tp[pred_class] += 1
+                    else:
+                        # Misclassified: FP for predicted class, FN for true class
+                        per_class_fp[pred_class] += 1
+                        per_class_fn[gt_class] += 1
+
                     matched_gt.add(best_gt_idx)
                 else:
+                    # False positive
                     fp += 1
+                    per_class_fp[pred_class] += 1
+                    fp_per_pred_class[pred_class] += 1
 
-            fn += len(gt_boxes) - len(matched_gt)
+            # Unmatched ground truths are false negatives
+            for gt_idx, gt in enumerate(gt_boxes):
+                if gt_idx not in matched_gt:
+                    fn += 1
+                    gt_class = int(gt[4])
+                    per_class_fn[gt_class] += 1
 
         elif len(pred_boxes) > 0:
             # All predictions are false positives
             fp += len(pred_boxes)
+            for pred in pred_boxes:
+                pred_class = int(pred[5])
+                per_class_fp[pred_class] += 1
+                fp_per_pred_class[pred_class] += 1
         else:
             # All ground truths are false negatives
             fn += len(gt_boxes)
+            for gt in gt_boxes:
+                gt_class = int(gt[4])
+                per_class_fn[gt_class] += 1
 
-    return tp, fp, fn
+    # Compute per-class metrics
+    per_class_precision = []
+    per_class_recall = []
+    per_class_f1 = []
+
+    for c in range(num_classes):
+        p = per_class_tp[c] / (per_class_tp[c] + per_class_fp[c]) if (per_class_tp[c] + per_class_fp[c]) > 0 else 0.0
+        r = per_class_tp[c] / (per_class_tp[c] + per_class_fn[c]) if (per_class_tp[c] + per_class_fn[c]) > 0 else 0.0
+        f = 2 * p * r / (p + r) if (p + r) > 0 else 0.0
+
+        per_class_precision.append(p)
+        per_class_recall.append(r)
+        per_class_f1.append(f)
+
+    return {
+        "overall": {
+            "tp": tp,
+            "fp": fp,
+            "fn": fn,
+        },
+        "per_class": {
+            "tp": per_class_tp,
+            "fp": per_class_fp,
+            "fn": per_class_fn,
+            "gt_count": per_class_gt_count,
+            "precision": per_class_precision,
+            "recall": per_class_recall,
+            "f1": per_class_f1,
+        },
+        "confusion_matrix": confusion,
+        "fp_by_predicted_class": fp_per_pred_class,
+    }
 
 
 def evaluate_model(
@@ -294,35 +379,91 @@ def evaluate_model(
             all_predictions.append(preds)
             all_ground_truths.append(gts)
 
-        # Compute metrics
-        tp, fp, fn = compute_metrics_at_threshold(
+        # Compute metrics (now returns dict with per-class info)
+        metrics = compute_metrics_at_threshold(
             all_predictions,
             all_ground_truths,
-            iou_threshold
+            iou_threshold,
+            num_classes=len(dataset_def.classes)
         )
+
+        # Overall metrics
+        tp = metrics["overall"]["tp"]
+        fp = metrics["overall"]["fp"]
+        fn = metrics["overall"]["fn"]
 
         precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
         recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
         f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
 
+        # Store detailed results
         results["thresholds"][conf_thresh] = {
-            "true_positives": tp,
-            "false_positives": fp,
-            "false_negatives": fn,
-            "precision": precision,
-            "recall": recall,
-            "f1_score": f1,
+            "overall": {
+                "true_positives": tp,
+                "false_positives": fp,
+                "false_negatives": fn,
+                "precision": precision,
+                "recall": recall,
+                "f1_score": f1,
+                "false_positive_rate": fp / (fp + tp) if (fp + tp) > 0 else 0.0,
+                "false_negative_rate": fn / (fn + tp) if (fn + tp) > 0 else 0.0,
+            },
+            "per_class": metrics["per_class"],
+            "confusion_matrix": metrics["confusion_matrix"],
+            "fp_by_predicted_class": metrics["fp_by_predicted_class"],
         }
 
-        print(f"Conf={conf_thresh:.1f}: TP={tp:4d}, FP={fp:4d}, FN={fn:4d} | "
+        # Print overall metrics
+        fp_rate = fp / (fp + tp) if (fp + tp) > 0 else 0.0
+        fn_rate = fn / (fn + tp) if (fn + tp) > 0 else 0.0
+
+        print(f"\nConf={conf_thresh:.1f} OVERALL:")
+        print(f"  TP={tp:4d}, FP={fp:4d}, FN={fn:4d} | "
               f"P={precision:.3f}, R={recall:.3f}, F1={f1:.3f}")
+        print(f"  FP rate: {fp_rate:.3f}, FN rate: {fn_rate:.3f}")
+
+        # Print per-class metrics
+        print(f"\n  Per-class breakdown:")
+        for c, class_name in enumerate(dataset_def.classes):
+            c_tp = metrics["per_class"]["tp"][c]
+            c_fp = metrics["per_class"]["fp"][c]
+            c_fn = metrics["per_class"]["fn"][c]
+            c_p = metrics["per_class"]["precision"][c]
+            c_r = metrics["per_class"]["recall"][c]
+            c_f1 = metrics["per_class"]["f1"][c]
+            c_gt = metrics["per_class"]["gt_count"][c]
+            c_fp_pred = metrics["fp_by_predicted_class"][c]
+
+            print(f"    {class_name:10s}: TP={c_tp:4d}, FP={c_fp:4d}, FN={c_fn:4d}, GT={c_gt:4d} | "
+                  f"P={c_p:.3f}, R={c_r:.3f}, F1={c_f1:.3f}")
+            print(f"                  (FP predicted as '{class_name}': {c_fp_pred})")
+
+        # Print confusion matrix
+        if len(dataset_def.classes) > 1:
+            print(f"\n  Confusion matrix (rows=predicted, cols=ground_truth):")
+            print(f"              ", end="")
+            for c, class_name in enumerate(dataset_def.classes):
+                print(f"{class_name:>10s}", end=" ")
+            print()
+            for pred_c, pred_class_name in enumerate(dataset_def.classes):
+                print(f"    {pred_class_name:>10s}:", end=" ")
+                for gt_c in range(len(dataset_def.classes)):
+                    print(f"{metrics['confusion_matrix'][pred_c][gt_c]:10d}", end=" ")
+                print()
 
     print("="*80)
 
-    # Find best F1 threshold
+    # Find best F1 threshold (based on overall F1)
     best_thresh = max(results["thresholds"].items(),
-                      key=lambda x: x[1]["f1_score"])
-    print(f"\nBest F1 score: {best_thresh[1]['f1_score']:.3f} at conf={best_thresh[0]:.1f}")
+                      key=lambda x: x[1]["overall"]["f1_score"])
+    print(f"\nBest overall F1 score: {best_thresh[1]['overall']['f1_score']:.3f} at conf={best_thresh[0]:.1f}")
+
+    # Also show best F1 per class at this threshold
+    print(f"Per-class F1 at best threshold:")
+    for c, class_name in enumerate(dataset_def.classes):
+        c_f1 = best_thresh[1]["per_class"]["f1"][c]
+        print(f"  {class_name}: {c_f1:.3f}")
+
     results["best_threshold"] = {
         "confidence": best_thresh[0],
         "metrics": best_thresh[1]
