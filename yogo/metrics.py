@@ -150,6 +150,10 @@ class Metrics:
 
         fps, fls = pred_label_matches.preds, pred_label_matches.labels
 
+        # Skip metrics update if no predictions or labels (empty tiles)
+        if fps.shape[0] == 0 or fls.shape[0] == 0:
+            return
+
         if self.include_mAP:
             self.mAP.update(*self._format_for_mAP(fps, fls))
 
