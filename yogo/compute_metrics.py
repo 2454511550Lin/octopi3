@@ -358,9 +358,15 @@ def apply_nms(
     """
     Apply Non-Maximum Suppression to remove duplicate predictions.
 
+    Uses class-agnostic NMS: suppresses overlapping boxes regardless of class,
+    keeping only the highest-scoring prediction per location. This ensures
+    one detection per object (e.g., a parasite is either "positive" or "unsure",
+    not both).
+
     Args:
         predictions: List of predictions, each [x1, y1, x2, y2, objectness, class_id]
-        iou_threshold: IoU threshold for suppression
+        iou_threshold: IoU threshold for suppression (boxes with IoU >= threshold
+                       are considered duplicates)
 
     Returns:
         Filtered list of predictions after NMS
@@ -372,7 +378,7 @@ def apply_nms(
     boxes = torch.tensor([p[:4] for p in predictions])
     scores = torch.tensor([p[4] for p in predictions])
 
-    # Apply NMS
+    # Apply class-agnostic NMS (one detection per location)
     keep_indices = ops.nms(boxes, scores, iou_threshold)
 
     # Return filtered predictions
