@@ -57,15 +57,17 @@ python -m yogo.train dataset/malaria_stratified_cv_fold1.yaml \
     --half \
     --no-obj-weight 0.05
 
-# Compute metrics on test data
+# Compute metrics on test data (saves to results/{model}/metrics/test/)
 python -m yogo.compute_metrics \
     results/fold1/checkpoints/best.pth \
     dataset/malaria_stratified_cv_fold1.yaml
 
-# Compute metrics at specific confidence thresholds
+# Full evaluation with visualizations and P-R curves
 python -m yogo.compute_metrics model.pth dataset.yaml \
-    --conf-thresholds 0.3 0.5 0.7 \
-    --output metrics.json
+    --save-images --compute-curves
+
+# Reuse cached predictions (skip inference for faster iteration)
+python -m yogo.compute_metrics model.pth dataset.yaml --load-predictions
 
 # Run inference
 yogo infer path/to/model.pth
@@ -152,6 +154,42 @@ Based on the dataset characteristics:
 - Rotation and flips (parasites have no preferred orientation)
 - Brightness/contrast adjustments (simulate microscopy variations)
 - Minimal elastic deformations (RBC deformation may confuse model)
+
+## Model Evaluation
+
+The `compute_metrics` module provides comprehensive evaluation following ML journal best practices:
+
+**Metrics computed:**
+- Precision, Recall, F1 at configurable confidence thresholds
+- Average Precision (AP) via P-R curve integration
+- Matthews Correlation Coefficient (MCC) - superior to F1 for imbalanced data
+- Per-class metrics and confusion matrix
+- Sample-level metrics (FOV detection rate, count correlation)
+
+**Output structure:**
+```
+results/{experiment_id}/metrics/{split}/
+├── predictions/           # Cached model outputs (skip inference next time)
+│   ├── predictions.pt     # Tensor data (~150MB for test set)
+│   └── metadata.json      # Model config for reproducibility
+├── curves/                # P-R curves for plotting
+│   └── pr_curve.json
+├── visualizations/        # GT vs Predicted images per FOV
+│   └── conf0.5/
+├── metrics.json           # Full results in JSON format
+└── evaluation_metadata.json
+```
+
+**Example output (Fold 1 test set at conf=0.5):**
+| Metric | Value |
+|--------|-------|
+| F1 | 0.553 |
+| Precision | 0.619 |
+| Recall | 0.499 |
+| AP | 0.540 |
+| MCC | 0.555 |
+| FOV Detection Rate | 100% |
+| Count Correlation | 0.811 |
 
 ## Weights & Biases Integration
 

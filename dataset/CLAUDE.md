@@ -206,44 +206,6 @@ This sample can be used for:
 
 ---
 
-## Usage Recommendations
-
-### For YOGO Training
-1. **Use all 15 samples** for initial training
-2. **Stratified split** by geography to ensure diversity:
-   - Train: 70% (10-11 samples)
-   - Val: 15% (2 samples)
-   - Test: 15% (2 samples)
-3. **Consider class balance:**
-   - High parasitemia samples will dominate training
-   - Use weighted sampling or augmentation for low-positive samples
-   - Ensure negative samples are well-represented
-
-### Preprocessing Considerations
-1. **Image size:** Mixed 2800×2800 and 3000×3000 requires tiling strategy
-   - **Implemented:** 1024×1024 tiles with 256px overlap (stride=768)
-   - Generates 9 tiles per FOV regardless of original size
-   - No downsampling - preserves full parasite resolution
-
-2. **Multi-channel input:**
-   - **Implemented:** 4-channel input [DPC, R, G, B]
-   - DPC (1 channel): Grayscale differential phase contrast
-   - Fluorescent (3 channels): RGB fluorescent image
-   - Concatenated to form 4-channel input for YOGO
-
-3. **Label filtering:**
-   - Only "positive" and "unsure" labels used for training
-   - "negative" annotations ignored (too many, imbalanced)
-   - "ignored" annotations excluded
-
-### Data Augmentation
-- **Rotation:** Parasites have no preferred orientation
-- **Flip:** Horizontal and vertical flips appropriate
-- **Brightness/Contrast:** Simulate microscopy variations
-- **Elastic deformations:** Minimal (RBC deformation may confuse model)
-
----
-
 ## Related Files
 
 - **[README.md](./README.md)** - Annotation format and file structure details

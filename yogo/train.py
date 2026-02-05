@@ -19,7 +19,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 
 from yogo.model import YOGO
 from yogo.metrics import Metrics
-from yogo.data.yogo_dataloader import get_dataloader
+from yogo.data.yogo_dataloader import get_dataloader, get_class_counts
 from yogo.data.dataset_definition_file import DatasetDefinition
 from yogo.yogo_loss import YOGOLoss
 from yogo.model_defns import get_model_func
@@ -262,6 +262,54 @@ class Trainer:
         self.experiment_tracker.log(f"Train size: {self._dataset_size(self.train_dataloader)} images")
         self.experiment_tracker.log(f"Val size: {self._dataset_size(self.validate_dataloader)} images")
         self.experiment_tracker.log(f"Test size: {self._dataset_size(self.test_dataloader)} images")
+
+        # Log class distribution in training set
+        self._log_class_distribution()
+
+    def _log_class_distribution(self) -> None:
+        """Log class distribution in training set to help identify class imbalance."""
+        if self._rank != 0:
+            return
+
+        num_classes = len(self.config["class_names"])
+        class_names = self.config["class_names"]
+
+        try:
+            class_counts = get_class_counts(
+                self.train_dataloader, num_classes, verbose=False
+            )
+        except Exception as e:
+            self.experiment_tracker.log(f"Could not compute class distribution: {e}")
+            return
+
+        total = class_counts.sum().item()
+        if total == 0:
+            self.experiment_tracker.log("Warning: No objects found in training set")
+            return
+
+        # Log class distribution
+        self.experiment_tracker.log("")
+        self.experiment_tracker.log("Class distribution in train set:")
+        for i, name in enumerate(class_names):
+            count = class_counts[i].item()
+            pct = 100.0 * count / total
+            self.experiment_tracker.log(f"  {name}: {count} ({pct:.1f}%)")
+
+        # Compute and log imbalance ratio
+        if num_classes >= 2:
+            max_count = class_counts.max().item()
+            min_count = class_counts[class_counts > 0].min().item() if (class_counts > 0).any() else 1
+            ratio = max_count / min_count if min_count > 0 else float("inf")
+            self.experiment_tracker.log(f"  Imbalance ratio: {ratio:.2f}:1")
+
+            # Warn if severe imbalance
+            if ratio > 2.5:
+                self.experiment_tracker.log(
+                    f"WARNING: Class imbalance > 2.5:1 detected! "
+                    f"Consider using class weights or rebalancing folds."
+                )
+
+        self.experiment_tracker.log("")
 
     def checkpoint(
         self,
